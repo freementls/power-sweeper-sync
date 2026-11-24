@@ -5,9 +5,11 @@ name: Mirror live site to freementls
 # freementls/power_sweeper branch azure-live. from-azure is sometimes replaced
 # with a new orphan commit, so the update is a force-push of that one branch.
 
+# Schedule stays off while the freementls account is locked for Actions billing.
+# A failed run every five minutes would only add noise. Run this by hand after
+# the lock is cleared. Until then, scripts/mirror_azure_live.sh on the home
+# server copies the branch.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:
