@@ -1,0 +1,60 @@
+name: Mirror live site to freementls
+
+# ScottBrooks4/power_sweeper branch from-azure is what the work computer pushes.
+# That push already deploys Azure. This job copies the same commit onto
+# freementls/power_sweeper branch azure-live. from-azure is sometimes replaced
+# with a new orphan commit, so the update is a force-push of that one branch.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: azure-live-mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy from-azure to azure-live
+        env:
+          MIRROR_KEY: ${{ secrets.FREEMENTLS_MIRROR_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MIRROR_KEY}" ]; then
+            echo "::error::FREEMENTLS_MIRROR_KEY is not set"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MIRROR_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+
+          SCOTT=$(git ls-remote https://github.com/ScottBrooks4/power_sweeper.git refs/heads/from-azure | awk '{print $1}')
+          HOME_SHA=$(git ls-remote git@github.com:freementls/power_sweeper.git refs/heads/azure-live | awk '{print $1}')
+          echo "scott from-azure ${SCOTT:-missing}"
+          echo "freementls azure-live ${HOME_SHA:-missing}"
+          if [ -z "$SCOTT" ]; then
+            echo "::error::ScottBrooks4 from-azure does not exist"
+            exit 1
+          fi
+          if [ "$SCOTT" = "$HOME_SHA" ]; then
+            echo "Already the same commit."
+            exit 0
+          fi
+
+          rm -rf "$RUNNER_TEMP/mirror.git"
+          git init --bare "$RUNNER_TEMP/mirror.git"
+          git -C "$RUNNER_TEMP/mirror.git" remote add scott https://github.com/ScottBrooks4/power_sweeper.git
+          git -C "$RUNNER_TEMP/mirror.git" remote add home git@github.com:freementls/power_sweeper.git
+          git -C "$RUNNER_TEMP/mirror.git" fetch --no-tags scott from-azure
+          git -C "$RUNNER_TEMP/mirror.git" push --force home FETCH_HEAD:refs/heads/azure-live
+          AFTER=$(git ls-remote git@github.com:freementls/power_sweeper.git refs/heads/azure-live | awk '{print $1}')
+          echo "azure-live is now ${AFTER}"
+          test "$AFTER" = "$SCOTT"
